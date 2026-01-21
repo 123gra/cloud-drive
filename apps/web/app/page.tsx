@@ -42,7 +42,7 @@ export default function Page() {
     })
 
     if (error) alert(error.message)
-    else alert('Check your email for the login link ✉️')
+    else alert('Check your email for the login link')
   }
 
   if (loading) return null
