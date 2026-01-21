@@ -1,81 +1,40 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import {
+  Search,
+  Star,
+  Trash2,
+  Download,
+  Share2,
+  LogOut,
+  File
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 export default function DrivePage() {
   const [user, setUser] = useState<any>(null)
   const [files, setFiles] = useState<any[]>([])
-  const [uploading, setUploading] = useState(false)
-  const [search, setSearch] = useState('')
-  const [view, setView] = useState<'all' | 'starred' | 'trash'>('all')
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      const currentUser = data.session?.user ?? null
-      setUser(currentUser)
-      if (currentUser) fetchFiles(currentUser.id)
+      const u = data.session?.user
+      setUser(u)
+      if (u) fetchFiles(u.id)
     })
   }, [])
 
   const fetchFiles = async (userId: string) => {
-    const { data } = await supabase
-      .from('files')
-      .select('*')
-      .eq('owner_id', userId)
-      .order('created_at', { ascending: false })
-
+    const { data } = await supabase.storage.from('user-files').list(userId)
     setFiles(data || [])
   }
 
-  /* ================= FILE ACTIONS ================= */
-
-  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !user) return
-    const file = e.target.files[0]
-    setUploading(true)
-
-    const path = `${user.id}/${Date.now()}-${file.name}`
-
-    const { error } = await supabase.storage
+  const downloadFile = async (name: string) => {
+    const { data } = await supabase.storage
       .from('user-files')
-      .upload(path, file)
-
-    if (!error) {
-      await supabase.from('files').insert({
-        name: file.name,
-        storage_path: path,
-        owner_id: user.id,
-      })
-      fetchFiles(user.id)
-    } else alert(error.message)
-
-    setUploading(false)
-  }
-
-  const softDelete = async (id: string) => {
-    await supabase.from('files').update({ is_deleted: true }).eq('id', id)
-    fetchFiles(user.id)
-  }
-
-  const restoreFile = async (id: string) => {
-    await supabase.from('files').update({ is_deleted: false }).eq('id', id)
-    fetchFiles(user.id)
-  }
-
-  const toggleStar = async (id: string, current: boolean) => {
-    await supabase.from('files').update({ is_starred: !current }).eq('id', id)
-    fetchFiles(user.id)
-  }
-
-  const downloadFile = async (path: string, name: string) => {
-    const { data, error } = await supabase.storage
-      .from('user-files')
-      .download(path)
-
-    if (error) return alert(error.message)
-
-    const url = URL.createObjectURL(data)
+      .download(`${user.id}/${name}`)
+    const url = URL.createObjectURL(data!)
     const a = document.createElement('a')
     a.href = url
     a.download = name
@@ -83,110 +42,136 @@ export default function DrivePage() {
     URL.revokeObjectURL(url)
   }
 
-  const makePublic = async (id: string) => {
-    const publicId = crypto.randomUUID()
-
-    await supabase
-      .from('files')
-      .update({ is_public: true, public_id: publicId })
-      .eq('id', id)
-
-    alert(`Public link: ${window.location.origin}/public/${publicId}`)
-    fetchFiles(user.id)
-  }
-
-  /* ================= FILTERING ================= */
-
-  const visibleFiles = files
-    .filter(f =>
-      view === 'trash' ? f.is_deleted :
-      view === 'starred' ? f.is_starred && !f.is_deleted :
-      !f.is_deleted
-    )
-    .filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
-
   const logout = async () => {
     await supabase.auth.signOut()
     window.location.href = '/'
   }
 
-  if (!user) return <p>Loading...</p>
+  const filteredFiles = files.filter((f) =>
+    f.name.toLowerCase().includes(query.toLowerCase())
+  )
+
+  if (!user) return null
 
   return (
-    <main style={container}>
-      <h2>📁 My Drive</h2>
-      <p>Logged in as <b>{user.email}</b></p>
-      <button onClick={logout}>Logout</button>
+    <div style={{ display: 'flex', height: '100vh', fontFamily: 'Inter, Arial' }}>
+      {/* Sidebar */}
+      <aside
+        style={{
+          width: 220,
+          background: '#f8f9fa',
+          padding: 20,
+          borderRight: '1px solid #ddd',
+        }}
+      >
+        <h3 style={{ marginBottom: 30 }}>☁ Cloud Drive</h3>
 
-      <hr />
-
-      {/* Controls */}
-      <input
-        placeholder="Search files"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={input}
-      />
-
-      <div style={{ marginBottom: 10 }}>
-        <button onClick={() => setView('all')}>All</button>{' '}
-        <button onClick={() => setView('starred')}>⭐ Starred</button>{' '}
-        <button onClick={() => setView('trash')}>🗑 Trash</button>
-      </div>
-
-      <input type="file" onChange={uploadFile} />
-      {uploading && <p>Uploading...</p>}
-
-      <ul style={{ listStyle: 'none', padding: 0 }}>
-        {visibleFiles.map(file => (
-          <li key={file.id} style={row}>
-            <span>{file.name}</span>
-
-            <span style={{ display: 'flex', gap: 8 }}>
-              {!file.is_deleted && (
-                <>
-                  <button onClick={() => toggleStar(file.id, file.is_starred)}>
-                    {file.is_starred ? '⭐' : '☆'}
-                  </button>
-                  <button onClick={() => downloadFile(file.storage_path, file.name)}>⬇️</button>
-                  <button onClick={() => makePublic(file.id)}>🔗</button>
-                  <button onClick={() => softDelete(file.id)}>🗑</button>
-                </>
-              )}
-
-              {file.is_deleted && (
-                <button onClick={() => restoreFile(file.id)}>♻️ Restore</button>
-              )}
-            </span>
-          </li>
+        {['My Drive', 'Shared', 'Starred', 'Trash'].map((item) => (
+          <div
+            key={item}
+            style={{
+              padding: '10px 8px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              marginBottom: 6,
+            }}
+          >
+            {item}
+          </div>
         ))}
-      </ul>
-    </main>
+      </aside>
+
+      {/* Main */}
+      <main style={{ flex: 1 }}>
+        {/* Top bar */}
+        <header
+          style={{
+            padding: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #ddd',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              background: '#f1f3f4',
+              padding: '6px 12px',
+              borderRadius: 20,
+              width: 400,
+            }}
+          >
+            <Search size={18} />
+            <input
+              placeholder="Search files"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              style={{
+                border: 'none',
+                outline: 'none',
+                background: 'transparent',
+                width: '100%',
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 14 }}>{user.email}</span>
+            <LogOut size={18} cursor="pointer" onClick={logout} />
+          </div>
+        </header>
+
+        {/* File list */}
+        <div style={{ padding: 20 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: '#666' }}>
+                <th>Name</th>
+                <th style={{ width: 160 }}>Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredFiles.map((file) => (
+                <tr
+                  key={file.name}
+                  style={{
+                    borderBottom: '1px solid #eee',
+                    height: 48,
+                  }}
+                >
+                  <td style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <File size={18} />
+                    {file.name}
+                  </td>
+
+                  <td>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <Download
+                        size={18}
+                        cursor="pointer"
+                        onClick={() => downloadFile(file.name)}
+                      />
+                      <Star size={18} cursor="pointer" />
+                      <Share2 size={18} cursor="pointer" />
+                      <Trash2 size={18} cursor="pointer" />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {filteredFiles.length === 0 && (
+            <p style={{ marginTop: 40, color: '#777' }}>
+              No files found
+            </p>
+          )}
+        </div>
+      </main>
+    </div>
   )
-}
-
-/* ================= STYLES ================= */
-
-const container: React.CSSProperties = {
-  maxWidth: 800,
-  margin: '40px auto',
-  padding: 30,
-  background: '#f9f9f9',
-  borderRadius: 8,
-  fontFamily: 'Arial',
-}
-
-const row: React.CSSProperties = {
-  background: '#fff',
-  padding: 10,
-  marginBottom: 6,
-  display: 'flex',
-  justifyContent: 'space-between',
-  borderRadius: 6,
-}
-
-const input: React.CSSProperties = {
-  width: '100%',
-  padding: 8,
-  marginBottom: 10,
 }
