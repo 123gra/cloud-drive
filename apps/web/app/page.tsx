@@ -1,77 +1,107 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from './../lib/supabase'
 
 export default function Page() {
-  const [mounted, setMounted] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [email, setEmail] = useState('')
-  const [status, setStatus] = useState('Checking session...')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setMounted(true)
-
-    // 🔑 IMPORTANT: handle magic link session
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null)
-      setStatus('Ready')
+      const sessionUser = data.session?.user ?? null
+      setUser(sessionUser)
+      setLoading(false)
+
+      if (sessionUser) {
+        window.location.href = '/drive'
+      }
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
+    const { data: sub } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user ?? null)
+        const sessionUser = session?.user ?? null
+        setUser(sessionUser)
+
+        if (sessionUser) {
+          window.location.href = '/drive'
+        }
       }
     )
 
-    return () => {
-      listener.subscription.unsubscribe()
-    }
+    return () => sub.subscription.unsubscribe()
   }, [])
 
-  if (!mounted) return null
+  const login = async () => {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/drive`,
+      },
+    })
 
-const login = async () => {
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
-    },
-  })
-
-  if (error) alert(error.message)
-  else alert('Check your email for login link ✉️')
-}
-
-
-
-
-  const logout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
+    if (error) alert(error.message)
+    else alert('Check your email for the login link ✉️')
   }
 
+  if (loading) return null
+
   return (
-    <main style={{ padding: 40 }}>
-      <h1>Cloud Drive</h1>
+    <main
+      style={{
+        height: '100vh',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        fontFamily: 'Arial, sans-serif',
+        background: '#eef2f7',
+      }}
+    >
+      <div
+        style={{
+          width: 350,
+          padding: 30,
+          background: '#fff',
+          borderRadius: 10,
+          boxShadow: '0 0 12px rgba(0,0,0,0.15)',
+          textAlign: 'center',
+        }}
+      >
+        <h1 style={{ marginBottom: 10 }}> Cloud Drive</h1>
+        <p style={{ color: '#666', marginBottom: 20 }}>
+          Login with your email
+        </p>
 
-      {user ? (
-        <>
-          <p>Logged in as: {user.email}</p>
-          <button onClick={logout}>Logout</button>
-        </>
-      ) : (
-        <>
-          <input
-            placeholder="Enter email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <button onClick={login}>Login</button>
-        </>
-      )}
+        <input
+          type="email"
+          placeholder="Enter email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          style={{
+            width: '100%',
+            padding: 10,
+            marginBottom: 15,
+            borderRadius: 5,
+            border: '1px solid #ccc',
+          }}
+        />
 
-      <p style={{ marginTop: 20 }}>{status}</p>
+        <button
+          onClick={login}
+          style={{
+            width: '100%',
+            padding: 10,
+            background: '#3498db',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 5,
+            cursor: 'pointer',
+          }}
+        >
+          Login
+        </button>
+      </div>
     </main>
   )
 }
